@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Smart IoT Dashboard | ESP32 + Firebase</title>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Sarabun', sans-serif; }
+        body { background: #0a0f1c; color: #eef2ff; padding: 24px 16px; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; margin-bottom: 30px; background: #111827; padding: 16px 24px; border-radius: 32px; }
+        .logo h1 { font-size: 1.6rem; font-weight: 600; background: linear-gradient(135deg, #60a5fa, #a855f7); -webkit-background-clip: text; background-clip: text; color: transparent; }
+        .logo p { font-size: 0.8rem; color: #9ca3af; }
+        .btn-icon { background: none; border: none; color: #f3f4f6; cursor: pointer; font-size: 1.2rem; transition: 0.2s; }
+        .btn-icon:hover { color: #f97316; }
+        button { background: #3b82f6; border: none; padding: 8px 20px; border-radius: 40px; font-weight: 600; color: white; cursor: pointer; }
+        button.secondary { background: #374151; }
+        .cards-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; margin-bottom: 30px; }
+        .sensor-card { background: #111827; border-radius: 28px; padding: 20px; border: 1px solid #1f2a3e; }
+        .sensor-title { font-size: 1.1rem; font-weight: 500; color: #9ca3af; margin-bottom: 12px; display: flex; gap: 10px; }
+        .sensor-value { font-size: 2.8rem; font-weight: 700; margin-bottom: 8px; }
+        .badge-online { background: #10b98120; color: #10b981; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; }
+        .badge-offline { background: #ef444420; color: #ef4444; }
+        .controls-panel { background: #111827; border-radius: 28px; padding: 24px; margin-bottom: 30px; display: flex; flex-wrap: wrap; gap: 40px; align-items: center; }
+        .switch-item { display: flex; align-items: center; gap: 20px; background: #1f2937; padding: 12px 24px; border-radius: 60px; }
+        .switch { position: relative; display: inline-block; width: 60px; height: 30px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #4b5563; transition: 0.3s; border-radius: 34px; }
+        .slider:before { position: absolute; content: ""; height: 22px; width: 22px; left: 4px; bottom: 4px; background-color: white; transition: 0.3s; border-radius: 50%; }
+        input:checked + .slider { background-color: #f97316; }
+        input:checked + .slider:before { transform: translateX(30px); }
+        .chart-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 24px; margin-bottom: 30px; }
+        .chart-card { background: #111827; border-radius: 28px; padding: 20px; }
+        .settings-section { background: #111827; border-radius: 28px; padding: 24px; margin-bottom: 30px; }
+        .form-grid { display: flex; flex-wrap: wrap; gap: 20px; margin-top: 20px; }
+        .input-group { flex: 1; min-width: 180px; }
+        .input-group label { display: block; font-size: 0.8rem; margin-bottom: 6px; color: #9ca3af; }
+        input, select { width: 100%; padding: 10px 12px; background: #1f2937; border: 1px solid #374151; border-radius: 20px; color: white; }
+        .timer-item { background: #1f2937; border-radius: 40px; padding: 12px 20px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+        .delete-timer { color: #f87171; cursor: pointer; background: none; border: none; font-size: 1.2rem; }
+        .auto-mode-switch { display: flex; align-items: center; gap: 15px; margin-bottom: 20px; }
+        .config-card { margin-top: 20px; background: #1f2937; padding: 15px; border-radius: 28px; }
+        .flex-between { display: flex; justify-content: space-between; align-items: center; }
+        @media (max-width: 700px) { .sensor-value { font-size: 2rem; } .chart-row { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <div class="logo"><h1><i class="fas fa-microchip"></i> Smart IoT Dashboard</h1><p>ESP32 + Firebase RTDB (ไม่ต้องล็อกอิน)</p></div>
+        <div class="user-info">
+            <button id="openConfigBtn" class="btn-icon" title="ตั้งค่า Firebase"><i class="fas fa-cog"></i></button>
+        </div>
+    </div>
+    <div class="cards-grid">
+        <div class="sensor-card"><div class="sensor-title"><i class="fas fa-thermometer-half"></i> อุณหภูมิ</div><div class="sensor-value"><span id="tempValue">--</span><span class="sensor-unit"> °C</span></div><div><span id="tempAlert" style="font-size: 0.8rem;"></span></div></div>
+        <div class="sensor-card"><div class="sensor-title"><i class="fas fa-tint"></i> ความชื้น</div><div class="sensor-value"><span id="humValue">--</span><span class="sensor-unit"> %</span></div></div>
+        <div class="sensor-card"><div class="sensor-title"><i class="fas fa-sun"></i> ความสว่าง</div><div class="sensor-value"><span id="lightValue">--</span><span class="sensor-unit"> %</span></div></div>
+        <div class="sensor-card"><div class="sensor-title"><i class="fas fa-exchange-alt"></i> สถานะฮาร์ดแวร์</div><div class="sensor-value" style="font-size: 1.6rem;"><span id="onlineBadge">🔍 กำลังตรวจสอบ</span></div><div>อัปเดตล่าสุด: <span id="lastUpdateTime">--:--:--</span></div></div>
+    </div>
+    <div class="controls-panel">
+        <div class="switch-item"><span class="switch-label"><i class="fas fa-lightbulb"></i> หลอดไฟ (Relay 1)</span><label class="switch"><input type="checkbox" id="relay1Switch"><span class="slider"></span></label></div>
+        <div class="switch-item"><span class="switch-label"><i class="fas fa-fan"></i> พัดลม (Relay 2)</span><label class="switch"><input type="checkbox" id="relay2Switch"><span class="slider"></span></label></div>
+    </div>
+    <div class="chart-row">
+        <div class="chart-card"><h3><i class="fas fa-chart-line"></i> อุณหภูมิ & ความชื้น (60 ล่าสุด)</h3><canvas id="envChart" width="400" height="250"></canvas></div>
+        <div class="chart-card"><h3><i class="fas fa-chart-line"></i> ความสว่าง (%)</h3><canvas id="lightChart" width="400" height="250"></canvas></div>
+    </div>
+    <div class="settings-section">
+        <h3><i class="fas fa-robot"></i> ระบบอัตโนมัติ (Smart Auto)</h3>
+        <div class="auto-mode-switch"><span>เปิดใช้งาน Auto Mode</span><label class="switch"><input type="checkbox" id="autoModeSwitch"><span class="slider"></span></label></div>
+        <div class="form-grid">
+            <div class="input-group"><label>🔥 เปิดพัดลมเมื่ออุณหภูมิ > (°C)</label><input type="number" id="autoFanTemp" step="0.5" value="32"></div>
+            <div class="input-group"><label>💧 แจ้งเตือนความชื้นต่ำกว่า (%)</label><input type="number" id="autoPumpHum" step="1" value="40"></div>
+            <div class="input-group"><label>⚠️ แจ้งเตือนอุณหภูมิเกิน (°C)</label><input type="number" id="alertTemp" step="0.5" value="35"></div>
+            <div class="input-group"><label>⚠️ แจ้งเตือนความสว่างน้อยกว่า (%)</label><input type="number" id="alertLight" step="1" value="20"></div>
+            <div class="input-group"><label>🕒 Timezone offset (ชั่วโมง)</label><input type="number" id="tzOffset" value="7"></div>
+        </div>
+        <button id="saveAutoSettings" style="margin-top: 15px;">💾 บันทึกการตั้งค่าอัตโนมัติ</button>
+    </div>
+    <div class="settings-section">
+        <h3><i class="fas fa-clock"></i> ตั้งเวลา (Timer Scheduler)</h3>
+        <div class="form-grid">
+            <div class="input-group"><label>เวลา (HH:MM)</label><input type="time" id="timerTime"></div>
+            <div class="input-group"><label>อุปกรณ์</label><select id="timerDevice"><option value="relay_1">หลอดไฟ (Relay 1)</option><option value="relay_2">พัดลม (Relay 2)</option></select></div>
+            <div class="input-group"><label>การทำงาน</label><select id="timerAction"><option value="true">เปิด</option><option value="false">ปิด</option></select></div>
+            <div class="input-group"><label>วัน (คั่นด้วย , เช่น 1,3,5 = จ, พ, ศ)</label><input type="text" id="timerDays" placeholder="1,2,3,4,5,6,7"></div>
+            <div class="input-group"><label>เปิดใช้งาน</label><select id="timerActive"><option value="true">Active</option><option value="false">Inactive</option></select></div>
+        </div>
+        <button id="addTimerBtn" style="margin-top: 10px;">➕ เพิ่ม Timer</button>
+        <div id="timerListContainer" class="timer-list"><h4>รายการ Timer ที่ตั้งไว้</h4><div id="timersList"></div></div>
+    </div>
+</div>
+<script>
+    // Firebase config default (ใช้ config ที่คุณให้ไว้แล้ว)
+    const DEFAULT_CONFIG = {
+        apiKey: "AIzaSyCTiuA-5zFGKNHVewWCZC8xz-0yVRIwTjI",
+        databaseURL: "https://smart-iot-dashboart-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "smart-iot-dashboart"
+    };
+
+    let firebaseApp = null, db = null;
+    let envChart, lightChart, lastSensorTimestamp = 0, offlineCheckInterval = null;
+
+    function getStoredConfig() {
+        try {
+            const raw = localStorage.getItem('firebase_iot_config');
+            return raw ? JSON.parse(raw) : DEFAULT_CONFIG;
+        } catch(e) { return DEFAULT_CONFIG; }
+    }
+    function saveConfig(config) { localStorage.setItem('firebase_iot_config', JSON.stringify(config)); }
+
+    function initFirebaseFromConfig(cfg) {
+        if (!cfg.apiKey || !cfg.databaseURL || !cfg.projectId) return false;
+        try {
+            if (firebaseApp) firebaseApp.delete().catch(()=>{});
+            const firebaseConfig = {
+                apiKey: cfg.apiKey,
+                databaseURL: cfg.databaseURL,
+                projectId: cfg.projectId,
+            };
+            firebaseApp = firebase.initializeApp(firebaseConfig);
+            db = firebase.database();
+            console.log("Firebase initialized");
+            return true;
+        } catch(e) { console.error(e); return false; }
+    }
+
+    function loadRealtimeData() {
+        if(!db) return;
+        db.ref('iot_system/sensors').on('value', (snap) => {
+            const data = snap.val();
+            if(data) {
+                document.getElementById('tempValue').innerText = data.temperature?.toFixed(1) ?? '--';
+                document.getElementById('humValue').innerText = data.humidity?.toFixed(1) ?? '--';
+                document.getElementById('lightValue').innerText = data.light_percent ?? '--';
+                if(data.timestamp) {
+                    lastSensorTimestamp = data.timestamp;
+                    const date = new Date(data.timestamp);
+                    document.getElementById('lastUpdateTime').innerText = date.toLocaleTimeString('th-TH');
+                }
+                db.ref('iot_system/settings').once('value', (setSnap) => {
+                    const set = setSnap.val() || {};
+                    if(set.alert_temp && data.temperature > set.alert_temp) document.getElementById('tempAlert').innerHTML = '⚠️ อุณหภูมิเกินเกณฑ์เตือน';
+                    else document.getElementById('tempAlert').innerHTML = '';
+                });
+            }
+        });
+        db.ref('iot_system/controls').on('value', (snap) => {
+            const ctrl = snap.val();
+            if(ctrl) {
+                document.getElementById('relay1Switch').checked = ctrl.relay_1 === true;
+                document.getElementById('relay2Switch').checked = ctrl.relay_2 === true;
+            }
+        });
+    }
+
+    function setupSwitches() {
+        document.getElementById('relay1Switch').addEventListener('change', (e) => { if(db) db.ref('iot_system/controls').update({ relay_1: e.target.checked }); });
+        document.getElementById('relay2Switch').addEventListener('change', (e) => { if(db) db.ref('iot_system/controls').update({ relay_2: e.target.checked }); });
+    }
+
+    function loadHistoryForCharts() {
+        if(!db) return;
+        db.ref('iot_system/history').orderByKey().limitToLast(60).once('value', (snap) => {
+            const items = []; snap.forEach(child => items.push({ key: child.key, val: child.val() }));
+            items.sort((a,b) => a.key.localeCompare(b.key));
+            const labels = items.map(i => new Date(parseInt(i.key)).toLocaleTimeString('th-TH', {hour:'2-digit', minute:'2-digit'}));
+            const temps = items.map(i => i.val.temperature ?? null);
+            const hums = items.map(i => i.val.humidity ?? null);
+            const lights = items.map(i => i.val.light_percent ?? null);
+            if(envChart) envChart.destroy();
+            envChart = new Chart(document.getElementById('envChart'), { type: 'line', data: { labels, datasets: [{ label: 'อุณหภูมิ (°C)', data: temps, borderColor: '#f97316', tension: 0.2 }, { label: 'ความชื้น (%)', data: hums, borderColor: '#3b82f6', tension: 0.2 }] }, options: { responsive: true } });
+            if(lightChart) lightChart.destroy();
+            lightChart = new Chart(document.getElementById('lightChart'), { type: 'line', data: { labels, datasets: [{ label: 'ความสว่าง (%)', data: lights, borderColor: '#a855f7', tension: 0.2 }] } });
+        });
+    }
+
+    function loadTimersList() {
+        if(!db) return;
+        db.ref('iot_system/timers').on('value', (snap) => {
+            const timers = snap.val() || {};
+            const container = document.getElementById('timersList');
+            container.innerHTML = '';
+            Object.keys(timers).forEach(key => {
+                const t = timers[key];
+                const div = document.createElement('div'); div.className = 'timer-item';
+                div.innerHTML = `<div><strong>${t.time}</strong> - ${t.device === 'relay_1' ? '💡 หลอดไฟ' : '🌀 พัดลม'} ${t.action ? 'เปิด' : 'ปิด'} ${t.active ? '✅' : '❌'} | วัน: ${t.days || '-'}</div><button class="delete-timer" data-id="${key}"><i class="fas fa-trash-alt"></i></button>`;
+                container.appendChild(div);
+            });
+            document.querySelectorAll('.delete-timer').forEach(btn => btn.addEventListener('click', (e) => { const id = btn.getAttribute('data-id'); db.ref(`iot_system/timers/${id}`).remove(); }));
+        });
+    }
+    function addNewTimer() {
+        const time = document.getElementById('timerTime').value;
+        const device = document.getElementById('timerDevice').value;
+        const action = document.getElementById('timerAction').value === 'true';
+        const daysRaw = document.getElementById('timerDays').value;
+        const active = document.getElementById('timerActive').value === 'true';
+        if(!time) return alert("กรุณาเลือกเวลา");
+        db.ref('iot_system/timers').push({ time, device, action, active, days: daysRaw || "" });
+        document.getElementById('timerTime').value = ''; document.getElementById('timerDays').value = '';
+    }
+    function loadAutoSettings() {
+        if(!db) return;
+        db.ref('iot_system/settings').on('value', (snap) => {
+            const s = snap.val() || {};
+            document.getElementById('autoModeSwitch').checked = s.auto_mode === true;
+            document.getElementById('autoFanTemp').value = s.auto_fan_temp ?? 32;
+            document.getElementById('autoPumpHum').value = s.auto_pump_hum ?? 40;
+            document.getElementById('alertTemp').value = s.alert_temp ?? 35;
+            document.getElementById('alertLight').value = s.alert_light ?? 20;
+            document.getElementById('tzOffset').value = s.timezone_offset ?? 7;
+        });
+    }
+    function saveAutoSettings() {
+        const settings = {
+            auto_mode: document.getElementById('autoModeSwitch').checked,
+            auto_fan_temp: parseFloat(document.getElementById('autoFanTemp').value),
+            auto_pump_hum: parseInt(document.getElementById('autoPumpHum').value),
+            alert_temp: parseFloat(document.getElementById('alertTemp').value),
+            alert_light: parseInt(document.getElementById('alertLight').value),
+            timezone_offset: parseInt(document.getElementById('tzOffset').value)
+        };
+        db.ref('iot_system/settings').update(settings);
+        alert("บันทึกการตั้งค่าอัตโนมัติเรียบร้อย");
+    }
+    function startOfflineMonitor() {
+        if(offlineCheckInterval) clearInterval(offlineCheckInterval);
+        offlineCheckInterval = setInterval(() => {
+            const badgeSpan = document.getElementById('onlineBadge');
+            if(!badgeSpan) return;
+            const diff = (Date.now() - lastSensorTimestamp) / 1000;
+            if(lastSensorTimestamp === 0) badgeSpan.innerHTML = "⏳ รอข้อมูล...";
+            else if(diff > 15) { badgeSpan.innerHTML = "🔴 ออฟไลน์ (ไม่มีข้อมูล >15วินาที)"; badgeSpan.className = "badge-offline"; }
+            else { badgeSpan.innerHTML = "🟢 ออนไลน์"; badgeSpan.className = "badge-online"; }
+        }, 2000);
+    }
+
+    function setupUI() {
+        document.getElementById('openConfigBtn').onclick = () => {
+            const cfg = getStoredConfig();
+            const newApiKey = prompt("Firebase API Key:", cfg.apiKey);
+            const newProjectId = prompt("Project ID:", cfg.projectId);
+            const newDBurl = prompt("Database URL (https://...):", cfg.databaseURL);
+            if(newApiKey && newProjectId && newDBurl) {
+                saveConfig({ apiKey: newApiKey, projectId: newProjectId, databaseURL: newDBurl });
+                alert("บันทึก config แล้ว รีเฟรชหน้าเพื่อใช้ config ใหม่");
+                location.reload();
+            }
+        };
+        document.getElementById('addTimerBtn').onclick = addNewTimer;
+        document.getElementById('saveAutoSettings').onclick = saveAutoSettings;
+        setupSwitches();
+    }
+
+    (function init() {
+        const stored = getStoredConfig();
+        if(initFirebaseFromConfig(stored)) {
+            setupUI();
+            loadRealtimeData();
+            loadHistoryForCharts();
+            loadTimersList();
+            loadAutoSettings();
+            startOfflineMonitor();
+        } else {
+            alert("Firebase Config ไม่ถูกต้อง กรุณากดปุ่มตั้งค่าเพื่อแก้ไข");
+        }
+    })();
+</script>
+</body>
+</html>
